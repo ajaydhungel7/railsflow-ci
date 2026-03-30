@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bundle install:*)",
+      "Bash(bundle list:*)",
+      "Bash(rails generate:*)",
+      "Bash(rails:*)",
+      "Bash(docker compose:*)"
+    ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
+  }
+}
