@@ -70,6 +70,11 @@ jobs:
           EOF
           )
 
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL not set — skipping notification"
+            exit 0
+          fi
+
           curl -fsSL -X POST \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
