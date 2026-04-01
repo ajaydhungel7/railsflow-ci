@@ -1,0 +1,51 @@
+# Reusable workflow: build the Rails Docker image and push to ECR.
+# Called by ci.yml after tests pass. Tags with the commit SHA.
+# Image is never rebuilt for subsequent environments — only re-tagged (see promote-image.yml).
+
+name: Build Image
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        required: true
+        type: string
+    outputs:
+      image_uri:
+        description: "Full ECR image URI including tag"
+        value: ${{ jobs.build.outputs.image_uri }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.meta.outputs.image_uri }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image URI
+        id: meta
+        run: |
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/shopstream:${{ inputs.image_tag }}"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./shopstream-api
+          file: ./shopstream-api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.image_uri }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

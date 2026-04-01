@@ -1,0 +1,51 @@
+# Reusable workflow: run Rails DB migrations as a one-off Kubernetes Job.
+# Called by deploy.yml before each environment's Helm rollout.
+# Job is deleted after completion regardless of outcome.
+
+name: Run Migrations
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ vars.AWS_REGION }} \
+            --name shopstream-${{ inputs.environment }}
+
+      - name: Run migrations
+        env:
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/shopstream:${{ inputs.image_tag }}
+        run: |
+          kubectl run rails-migrate-${{ github.run_id }} \
+            --image="$IMAGE" \
+            --restart=Never \
+            --rm \
+            --wait \
+            --timeout=300s \
+            --env="RAILS_ENV=production" \
+            --env="DATABASE_URL=${{ secrets.DATABASE_URL }}" \
+            -- bundle exec rails db:migrate

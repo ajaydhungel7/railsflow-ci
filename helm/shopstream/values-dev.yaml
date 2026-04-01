@@ -1,0 +1,15 @@
+replicaCount: 1
+
+ingress:
+  enabled: true
+  scheme: internal
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+secretName: shopstream-secrets

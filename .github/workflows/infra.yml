@@ -1,0 +1,117 @@
+# Infrastructure workflow: runs Terragrunt plan on PRs and apply on merge to main.
+# Triggered only when files under infra/ change. Secrets are passed as TF_VAR_*
+# environment variables so no credentials are ever hardcoded in config files.
+#
+# Required GitHub secrets:
+#   AWS_DEPLOY_ROLE_ARN    — IAM role ARN for OIDC auth
+#   DB_PASSWORD            — RDS master password (passed as TF_VAR_db_password)
+#   SLACK_WEBHOOK_URL      — Slack notifications
+#
+# Required GitHub variables:
+#   AWS_REGION             — e.g. ca-central-1
+
+name: Infra
+
+on:
+  push:
+    branches: [main]
+    paths: ["infra/**"]
+  pull_request:
+    paths: ["infra/**"]
+
+permissions:
+  id-token: write   # required for OIDC
+  contents: read
+  pull-requests: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/environments/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ">= 1.11"
+
+      - name: Install Terragrunt
+        run: |
+          TERRAGRUNT_VERSION="0.99.1"
+          curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" \
+            -o /usr/local/bin/terragrunt
+          chmod +x /usr/local/bin/terragrunt
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Terragrunt plan (all modules)
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+        run: terragrunt run-all plan --terragrunt-non-interactive
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Plan output is surfaced via the job logs linked below.
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Terragrunt Plan\nPlan complete. [View full output](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).`
+            })
+
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: infra/environments/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ">= 1.11"
+
+      - name: Install Terragrunt
+        run: |
+          TERRAGRUNT_VERSION="0.99.1"
+          curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" \
+            -o /usr/local/bin/terragrunt
+          chmod +x /usr/local/bin/terragrunt
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Terragrunt apply (all modules)
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+        run: terragrunt run-all apply --terragrunt-non-interactive --auto-approve
+
+  notify:
+    needs: [plan, apply]
+    if: always()
+    uses: ./.github/workflows/notify.yml
+    with:
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      workflow: Infra
+      environment: dev
+      ref: ${{ github.sha }}
+    secrets: inherit

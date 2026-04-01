@@ -1,0 +1,108 @@
+# Deployment workflow: promotes image, runs migrations, and does a Helm rollout.
+# Used for dev and staging. Production goes through canary.yml instead.
+# Called by ci.yml sequentially (dev first, then staging on success).
+
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment: dev | staging"
+        required: true
+        type: string
+      image_tag:
+        description: "Image tag (commit SHA) to deploy"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment: dev | staging"
+        required: true
+        type: choice
+        options: [dev, staging]
+      image_tag:
+        description: "Image tag (commit SHA) to deploy"
+        required: true
+        type: string
+
+jobs:
+  promote:
+    uses: ./.github/workflows/_reusable/promote-image.yml
+    with:
+      image_tag: ${{ inputs.image_tag }}
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  migrate:
+    needs: promote
+    uses: ./.github/workflows/_reusable/run-migrations.yml
+    with:
+      environment: ${{ inputs.environment }}
+      image_tag: ${{ inputs.image_tag }}
+    secrets: inherit
+
+  helm-deploy:
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ vars.AWS_REGION }} \
+            --name shopstream-${{ inputs.environment }}
+
+      - name: Helm deploy
+        run: |
+          helm upgrade --install shopstream helm/shopstream \
+            --namespace shopstream \
+            --create-namespace \
+            --values helm/shopstream/values-${{ inputs.environment }}.yaml \
+            --set image.repository="${{ steps.login-ecr.outputs.registry }}/shopstream" \
+            --set image.tag="${{ inputs.image_tag }}" \
+            --atomic \
+            --timeout 5m
+
+      - name: Print ALB URL
+        run: |
+          echo "Waiting for ALB to be assigned..."
+          for i in $(seq 1 12); do
+            ALB_URL=$(kubectl get ingress shopstream -n shopstream \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+            if [ -n "$ALB_URL" ]; then
+              echo "---------------------------------------------"
+              echo "API is live at: http://$ALB_URL"
+              echo "Health check:   http://$ALB_URL/up"
+              echo "---------------------------------------------"
+              exit 0
+            fi
+            echo "  waiting... ($i/12)"
+            sleep 10
+          done
+          echo "ALB URL not yet assigned — check 'kubectl get ingress -n shopstream'"
+
+  notify:
+    needs: [promote, migrate, helm-deploy]
+    if: always()
+    uses: ./.github/workflows/notify.yml
+    with:
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      workflow: Deploy
+      environment: ${{ inputs.environment }}
+      ref: ${{ inputs.image_tag }}
+    secrets: inherit

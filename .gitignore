@@ -1,0 +1,14 @@
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terragrunt-cache/
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# macOS
+.DS_Store

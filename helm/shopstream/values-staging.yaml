@@ -1,0 +1,21 @@
+replicaCount: 2
+
+ingress:
+  enabled: true
+  scheme: internal   # not internet-accessible — HTTP is fine here
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 384Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+
+secretName: shopstream-secrets

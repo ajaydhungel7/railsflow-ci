@@ -1,0 +1,112 @@
+# Canary deployment workflow: routes 10% of production traffic to the new image,
+# monitors error rates for 10 minutes via canary-check.sh, then either promotes
+# to full rollout or automatically triggers rollback.yml on elevated errors.
+# Requires manual approval via the "production" GitHub Environment before running.
+
+name: Canary Deploy
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "Image tag (commit SHA) to deploy as canary"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag (commit SHA) to deploy as canary"
+        required: true
+        type: string
+
+jobs:
+  promote:
+    uses: ./.github/workflows/_reusable/promote-image.yml
+    with:
+      image_tag: ${{ inputs.image_tag }}
+      environment: production
+    secrets: inherit
+
+  migrate:
+    needs: promote
+    uses: ./.github/workflows/_reusable/run-migrations.yml
+    with:
+      environment: production
+      image_tag: ${{ inputs.image_tag }}
+    secrets: inherit
+
+  canary-deploy:
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production   # manual approval gate lives here
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ vars.AWS_REGION }} \
+            --name shopstream-production
+
+      - name: Deploy canary (10% traffic)
+        run: |
+          helm upgrade --install shopstream-canary helm/shopstream \
+            --namespace shopstream \
+            --values helm/shopstream/values-production.yaml \
+            --set image.repository="${{ steps.login-ecr.outputs.registry }}/shopstream" \
+            --set image.tag="${{ inputs.image_tag }}" \
+            --set replicaCount=1 \
+            --atomic \
+            --timeout 5m
+          echo "Canary deployed — monitoring for 10 minutes"
+
+      - name: Monitor canary
+        id: monitor
+        run: bash scripts/canary-check.sh
+        continue-on-error: true   # script exits non-zero on elevated errors; we handle it below
+
+      - name: Full rollout (canary healthy)
+        if: steps.monitor.outcome == 'success'
+        run: |
+          helm upgrade --install shopstream helm/shopstream \
+            --namespace shopstream \
+            --values helm/shopstream/values-production.yaml \
+            --set image.repository="${{ steps.login-ecr.outputs.registry }}/shopstream" \
+            --set image.tag="${{ inputs.image_tag }}" \
+            --atomic \
+            --timeout 10m
+          helm uninstall shopstream-canary --namespace shopstream
+          echo "Full rollout complete for ${{ inputs.image_tag }}"
+
+      - name: Rollback (canary unhealthy)
+        if: steps.monitor.outcome != 'success'
+        run: |
+          helm uninstall shopstream-canary --namespace shopstream || true
+          echo "Canary failed — triggering rollback"
+          bash scripts/rollback.sh \
+            --env production \
+            --repo ${{ github.repository }} \
+            --token ${{ secrets.GITHUB_TOKEN }}
+          exit 1
+
+  notify:
+    needs: [promote, migrate, canary-deploy]
+    if: always()
+    uses: ./.github/workflows/notify.yml
+    with:
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      workflow: "Canary Deploy"
+      environment: production
+      ref: ${{ inputs.image_tag }}
+    secrets: inherit

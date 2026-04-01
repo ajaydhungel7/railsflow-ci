@@ -1,0 +1,117 @@
+# Main CI/CD pipeline for the ShopStream Rails app.
+# Triggered on every push to main.
+#
+# Flow:
+#   test → build image → security scan → deploy dev → deploy staging
+#     → [manual approval via "production" environment] → canary deploy to production
+#
+# Required GitHub secrets:
+#   AWS_DEPLOY_ROLE_ARN    — IAM role ARN for OIDC auth (output of iam Terraform module)
+#   DATABASE_URL           — Connection string for migrations (per environment)
+#   SLACK_WEBHOOK_URL      — Slack notifications
+#   GITHUB_TOKEN           — Auto-provided; used by rollback.sh to trigger rollback workflow
+#
+# Required GitHub variables:
+#   AWS_REGION             — e.g. ca-central-1
+#   BRAKEMAN_OUTPUT_FORMAT — e.g. text (optional, defaults to text)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "infra/**"
+      - "**.md"
+
+permissions:
+  id-token: write   # required for OIDC
+  contents: read
+  security-events: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shopstream
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: shopstream_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgres://shopstream:testpassword@localhost:5432/shopstream_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Setup DB
+        run: bundle exec rails db:schema:load
+
+      - name: Run tests
+        run: bundle exec rails test
+
+      - name: Run linter
+        run: bundle exec rubocop --format github
+
+  build:
+    needs: test
+    uses: ./.github/workflows/_reusable/build-image.yml
+    with:
+      image_tag: ${{ github.sha }}
+    secrets: inherit
+
+  security:
+    needs: build
+    uses: ./.github/workflows/security-scan.yml
+    with:
+      image_tag: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-dev:
+    needs: security
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      image_tag: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-staging:
+    needs: deploy-dev
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      image_tag: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-production:
+    # Manual approval is enforced via the "production" GitHub Environment settings.
+    # A reviewer must approve before the canary job proceeds.
+    needs: deploy-staging
+    uses: ./.github/workflows/canary.yml
+    with:
+      image_tag: ${{ github.sha }}
+    secrets: inherit
+
+  notify:
+    needs: [test, build, security, deploy-dev, deploy-staging, deploy-production]
+    if: always()
+    uses: ./.github/workflows/notify.yml
+    with:
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || 'success') }}
+      workflow: CI
+      ref: ${{ github.sha }}
+    secrets: inherit

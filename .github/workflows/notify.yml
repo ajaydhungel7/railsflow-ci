@@ -1,0 +1,76 @@
+# Reusable workflow: send a Slack notification for any pipeline event.
+# Called at the end of every workflow (ci, deploy, canary, rollback, security-scan, infra).
+# Always runs with if: always() at the call site so failures are reported too.
+
+name: Notify
+
+on:
+  workflow_call:
+    inputs:
+      status:
+        description: "Pipeline status: success | failure | cancelled"
+        required: true
+        type: string
+      workflow:
+        description: "Name of the calling workflow"
+        required: true
+        type: string
+      environment:
+        description: "Target environment (optional)"
+        required: false
+        type: string
+        default: ""
+      ref:
+        description: "Git SHA or ref being processed"
+        required: false
+        type: string
+        default: ""
+      message:
+        description: "Optional extra detail line"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  slack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          STATUS="${{ inputs.status }}"
+          case "$STATUS" in
+            success)   EMOJI=":white_check_mark:" ;;
+            failure)   EMOJI=":x:" ;;
+            cancelled) EMOJI=":white_circle:" ;;
+            *)         EMOJI=":grey_question:" ;;
+          esac
+
+          ENV_PART=""
+          if [ -n "${{ inputs.environment }}" ]; then
+            ENV_PART=" → \`${{ inputs.environment }}\`"
+          fi
+
+          REF_PART=""
+          if [ -n "${{ inputs.ref }}" ]; then
+            REF_PART="\nRef: \`${{ inputs.ref }}\`"
+          fi
+
+          MSG_PART=""
+          if [ -n "${{ inputs.message }}" ]; then
+            MSG_PART="\n${{ inputs.message }}"
+          fi
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "text": "$EMOJI *${{ inputs.workflow }}*${ENV_PART} — ${STATUS}${REF_PART}${MSG_PART}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+          }
+          EOF
+          )
+
+          curl -fsSL -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$SLACK_WEBHOOK_URL"
