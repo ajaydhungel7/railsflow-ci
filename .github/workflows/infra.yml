@@ -1,14 +1,18 @@
-# Infrastructure workflow: runs Terragrunt plan on PRs and apply on merge to main.
-# Triggered only when files under infra/ change. Secrets are passed as TF_VAR_*
-# environment variables so no credentials are ever hardcoded in config files.
+# Infrastructure workflow — plan on PRs, apply dev on merge, apply prod after manual approval.
+# Triggered only when files under infra/ change.
+# RDS password is managed by AWS Secrets Manager — no DB_PASSWORD secret needed.
 #
-# Required GitHub secrets:
-#   AWS_DEPLOY_ROLE_ARN    — IAM role ARN for OIDC auth
-#   DB_PASSWORD            — RDS master password (passed as TF_VAR_db_password)
-#   SLACK_WEBHOOK_URL      — Slack notifications
+# Required GitHub secrets (bootstrapped manually on first run, auto-synced after):
+#   AWS_DEPLOY_ROLE_ARN_DEV  — IAM role ARN for dev OIDC auth
+#   AWS_DEPLOY_ROLE_ARN_PROD — IAM role ARN for prod OIDC auth
+#   SLACK_WEBHOOK_URL        — Slack notifications
 #
 # Required GitHub variables:
-#   AWS_REGION             — e.g. ca-central-1
+#   AWS_REGION               — e.g. ca-central-1
+#
+# GitHub Environments required:
+#   dev        — no approval gate
+#   production — required reviewers configured
 
 name: Infra
 
@@ -20,12 +24,12 @@ on:
     paths: ["infra/**"]
 
 permissions:
-  id-token: write   # required for OIDC
+  id-token: write
   contents: read
   pull-requests: write
 
 jobs:
-  plan:
+  plan-dev:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,44 +41,85 @@ jobs:
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ">= 1.11"
+          terraform_version: "1.14.8"
 
       - name: Install Terragrunt
         run: |
-          TERRAGRUNT_VERSION="0.99.1"
-          curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" \
+          curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v0.99.1/terragrunt_linux_amd64" \
             -o /usr/local/bin/terragrunt
           chmod +x /usr/local/bin/terragrunt
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_DEV }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Terragrunt plan (all modules)
-        env:
-          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-        run: terragrunt run-all plan --terragrunt-non-interactive
+      - name: Terragrunt plan
+        run: terragrunt run --all plan --non-interactive
 
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
-            // Plan output is surfaced via the job logs linked below.
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## Terragrunt Plan\nPlan complete. [View full output](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).`
+              body: `## Terragrunt Plan — dev\nPlan complete. [View full output](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).`
             })
 
-  apply:
+  plan-prod:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/environments/prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Install Terragrunt
+        run: |
+          curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v0.99.1/terragrunt_linux_amd64" \
+            -o /usr/local/bin/terragrunt
+          chmod +x /usr/local/bin/terragrunt
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_PROD }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Terragrunt plan
+        run: terragrunt run --all plan --non-interactive
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Terragrunt Plan — prod\nPlan complete. [View full output](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).`
+            })
+
+  apply-dev:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: plan
+    needs: plan-dev
     runs-on: ubuntu-latest
     environment: dev
+    permissions:
+      id-token: write
+      contents: read
+      secrets: write
     defaults:
       run:
         working-directory: infra/environments/dev
@@ -85,28 +130,147 @@ jobs:
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ">= 1.11"
+          terraform_version: "1.14.8"
 
       - name: Install Terragrunt
         run: |
-          TERRAGRUNT_VERSION="0.99.1"
-          curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" \
+          curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v0.99.1/terragrunt_linux_amd64" \
             -o /usr/local/bin/terragrunt
           chmod +x /usr/local/bin/terragrunt
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_DEV }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Terragrunt apply (all modules)
+      - name: Terragrunt apply
+        run: terragrunt run --all apply --non-interactive --auto-approve
+
+      - name: Sync outputs to GitHub secrets
         env:
-          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
-        run: terragrunt run-all apply --terragrunt-non-interactive --auto-approve
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh secret set AWS_DEPLOY_ROLE_ARN_DEV \
+            --body "$(cd iam && terragrunt output -raw github_actions_role_arn)" \
+            --repo ${{ github.repository }}
+          gh secret set ESO_ROLE_ARN_DEV \
+            --body "$(cd iam && terragrunt output -raw external_secrets_role_arn)" \
+            --repo ${{ github.repository }}
+          gh secret set RDS_SECRET_ARN_DEV \
+            --body "$(cd rds && terragrunt output -raw db_password_secret_arn)" \
+            --repo ${{ github.repository }}
+
+  install-controllers-dev:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: apply-dev
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ vars.AWS_REGION }} \
+            --name shopstream-dev
+
+      - name: Install External Secrets Operator
+        run: |
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm repo update
+          helm upgrade --install external-secrets external-secrets/external-secrets \
+            --namespace external-secrets \
+            --create-namespace \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="${{ secrets.ESO_ROLE_ARN_DEV }}" \
+            --wait \
+            --timeout 5m
+
+  apply-prod:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: install-controllers-dev
+    runs-on: ubuntu-latest
+    environment: production  # manual approval gate configured in GitHub Environment settings
+    permissions:
+      id-token: write
+      contents: read
+      secrets: write
+    defaults:
+      run:
+        working-directory: infra/environments/prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Install Terragrunt
+        run: |
+          curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v0.99.1/terragrunt_linux_amd64" \
+            -o /usr/local/bin/terragrunt
+          chmod +x /usr/local/bin/terragrunt
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_PROD }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Terragrunt apply
+        run: terragrunt run --all apply --non-interactive --auto-approve
+
+      - name: Sync outputs to GitHub secrets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh secret set AWS_DEPLOY_ROLE_ARN_PROD \
+            --body "$(cd iam && terragrunt output -raw github_actions_role_arn)" \
+            --repo ${{ github.repository }}
+          gh secret set ESO_ROLE_ARN_PROD \
+            --body "$(cd iam && terragrunt output -raw external_secrets_role_arn)" \
+            --repo ${{ github.repository }}
+          gh secret set RDS_SECRET_ARN_PROD \
+            --body "$(cd rds && terragrunt output -raw db_password_secret_arn)" \
+            --repo ${{ github.repository }}
+
+  install-controllers-prod:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: apply-prod
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_PROD }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ vars.AWS_REGION }} \
+            --name shopstream-prod
+
+      - name: Install External Secrets Operator
+        run: |
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm repo update
+          helm upgrade --install external-secrets external-secrets/external-secrets \
+            --namespace external-secrets \
+            --create-namespace \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="${{ secrets.ESO_ROLE_ARN_PROD }}" \
+            --wait \
+            --timeout 5m
 
   notify:
-    needs: [plan, apply]
+    needs: [apply-dev, install-controllers-dev, apply-prod, install-controllers-prod]
     if: always()
     uses: ./.github/workflows/notify.yml
     with:

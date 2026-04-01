@@ -13,3 +13,9 @@ resources:
     memory: 512Mi
 
 secretName: shopstream-secrets
+
+externalSecret:
+  enabled: true
+  region: ca-central-1
+  rdsSecretArn: ""          # set at deploy time: --set externalSecret.rdsSecretArn=<arn>
+  railsMasterKeySecretName: "shopstream/dev/rails-master-key"

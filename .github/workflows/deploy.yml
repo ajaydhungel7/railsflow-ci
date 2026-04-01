@@ -65,16 +65,17 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ vars.AWS_REGION }} \
-            --name shopstream-${{ inputs.environment }}
+            --name shopstream-dev
 
       - name: Helm deploy
         run: |
-          helm upgrade --install shopstream helm/shopstream \
-            --namespace shopstream \
+          helm upgrade --install shopstream-${{ inputs.environment }} helm/shopstream \
+            --namespace shopstream-${{ inputs.environment }} \
             --create-namespace \
             --values helm/shopstream/values-${{ inputs.environment }}.yaml \
-            --set image.repository="${{ steps.login-ecr.outputs.registry }}/shopstream" \
+            --set image.repository="${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api" \
             --set image.tag="${{ inputs.image_tag }}" \
+            --set externalSecret.rdsSecretArn="${{ secrets.RDS_SECRET_ARN_DEV }}" \
             --atomic \
             --timeout 5m
 
@@ -82,19 +83,20 @@ jobs:
         run: |
           echo "Waiting for ALB to be assigned..."
           for i in $(seq 1 12); do
-            ALB_URL=$(kubectl get ingress shopstream -n shopstream \
+            ALB_URL=$(kubectl get ingress shopstream-${{ inputs.environment }} \
+              -n shopstream-${{ inputs.environment }} \
               -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
             if [ -n "$ALB_URL" ]; then
               echo "---------------------------------------------"
-              echo "API is live at: http://$ALB_URL"
-              echo "Health check:   http://$ALB_URL/up"
+              echo "[${{ inputs.environment }}] API is live at: http://$ALB_URL"
+              echo "Health check: http://$ALB_URL/up"
               echo "---------------------------------------------"
               exit 0
             fi
             echo "  waiting... ($i/12)"
             sleep 10
           done
-          echo "ALB URL not yet assigned — check 'kubectl get ingress -n shopstream'"
+          echo "ALB URL not yet assigned — check 'kubectl get ingress -n shopstream-${{ inputs.environment }}'"
 
   notify:
     needs: [promote, migrate, helm-deploy]

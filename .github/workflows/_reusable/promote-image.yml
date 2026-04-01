@@ -34,7 +34,7 @@ jobs:
       - name: Retag image for environment
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          REPO: shopstream
+          REPO: shopstream-shopstream-api
           SOURCE_TAG: ${{ inputs.image_tag }}
           TARGET_TAG: ${{ inputs.environment }}
         run: |

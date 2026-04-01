@@ -10,7 +10,7 @@ locals {
 }
 
 # Single shared cache — prevents per-module cache sprawl and stale OpenTofu dirs
-download_dir = "${get_home_dir()}/.terragrunt-cache/shopstream"
+download_dir = "${get_env("HOME")}/.terragrunt-cache/shopstream"
 
 remote_state {
   backend = "s3"

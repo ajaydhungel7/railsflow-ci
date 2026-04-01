@@ -1,11 +1,16 @@
 {
+  "env": {
+    "TERRAGRUNT_TFPATH": "terraform"
+  },
   "permissions": {
     "allow": [
       "Bash(bundle install:*)",
       "Bash(bundle list:*)",
       "Bash(rails generate:*)",
       "Bash(rails:*)",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(terragrunt init:*)",
+      "Bash(env)"
     ]
   },
   "enabledPlugins": {

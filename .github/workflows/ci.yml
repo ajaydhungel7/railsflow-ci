@@ -97,17 +97,8 @@ jobs:
       image_tag: ${{ github.sha }}
     secrets: inherit
 
-  deploy-production:
-    # Manual approval is enforced via the "production" GitHub Environment settings.
-    # A reviewer must approve before the canary job proceeds.
-    needs: deploy-staging
-    uses: ./.github/workflows/canary.yml
-    with:
-      image_tag: ${{ github.sha }}
-    secrets: inherit
-
   notify:
-    needs: [test, build, security, deploy-dev, deploy-staging, deploy-production]
+    needs: [test, build, security, deploy-dev, deploy-staging]
     if: always()
     uses: ./.github/workflows/notify.yml
     with:

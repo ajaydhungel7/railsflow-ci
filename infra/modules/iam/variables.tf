@@ -30,3 +30,8 @@ variable "oidc_issuer_url" {
   type        = string
   description = "EKS OIDC issuer URL (output of eks module) — used to build IRSA trust condition"
 }
+
+variable "db_secret_arn" {
+  type        = string
+  description = "Secrets Manager ARN for the RDS master password — scoped in ESO policy"
+}

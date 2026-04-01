@@ -117,3 +117,47 @@ resource "aws_iam_role_policy_attachment" "alb_controller" {
   role       = aws_iam_role.alb_controller.name
   policy_arn = aws_iam_policy.alb_controller.arn
 }
+
+# ── External Secrets Operator IRSA role ───────────────────────────────────────
+
+resource "aws_iam_role" "external_secrets" {
+  name = "${var.project}-${var.env}-external-secrets"
+  tags = { Name = "${var.project}-${var.env}-external-secrets" }
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Principal = { Federated = var.oidc_provider_arn }
+      Condition = {
+        StringEquals = {
+          "${local.oidc_issuer}:sub" = "system:serviceaccount:external-secrets:external-secrets"
+          "${local.oidc_issuer}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_policy" "external_secrets" {
+  name = "${var.project}-${var.env}-external-secrets"
+  tags = { Name = "${var.project}-${var.env}-external-secrets" }
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret",
+      ]
+      Resource = var.db_secret_arn
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "external_secrets" {
+  role       = aws_iam_role.external_secrets.name
+  policy_arn = aws_iam_policy.external_secrets.arn
+}

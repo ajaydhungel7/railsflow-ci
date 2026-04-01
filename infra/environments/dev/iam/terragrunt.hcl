@@ -24,6 +24,14 @@ dependency "ecr" {
   mock_outputs_allowed_terraform_commands = ["validate", "plan"]
 }
 
+dependency "rds" {
+  config_path = "../rds"
+  mock_outputs = {
+    db_password_secret_arn = "arn:aws:secretsmanager:ca-central-1:123456789012:secret:mock"
+  }
+  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+}
+
 inputs = {
   env               = "dev"
   project           = "shopstream"
@@ -33,4 +41,5 @@ inputs = {
   ecr_arn           = dependency.ecr.outputs.repository_arn
   oidc_provider_arn = dependency.eks.outputs.oidc_provider_arn
   oidc_issuer_url   = dependency.eks.outputs.oidc_issuer_url
+  db_secret_arn     = dependency.rds.outputs.db_password_secret_arn
 }

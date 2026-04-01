@@ -18,7 +18,6 @@ dependency "vpc" {
 inputs = {
   env                = "prod"
   project            = "shopstream"
-  vpc_id             = dependency.vpc.outputs.vpc_id
   private_subnets    = dependency.vpc.outputs.private_subnets
   cluster_version    = "1.32"
   node_instance_type = "t2.medium"

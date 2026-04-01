@@ -34,11 +34,11 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ vars.AWS_REGION }} \
-            --name shopstream-${{ inputs.environment }}
+            --name shopstream-dev
 
       - name: Run migrations
         env:
-          IMAGE: ${{ steps.login-ecr.outputs.registry }}/shopstream:${{ inputs.image_tag }}
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api:${{ inputs.image_tag }}
         run: |
           kubectl run rails-migrate-${{ github.run_id }} \
             --image="$IMAGE" \
@@ -46,6 +46,15 @@ jobs:
             --rm \
             --wait \
             --timeout=300s \
-            --env="RAILS_ENV=production" \
-            --env="DATABASE_URL=${{ secrets.DATABASE_URL }}" \
-            -- bundle exec rails db:migrate
+            --namespace=shopstream-${{ inputs.environment }} \
+            --overrides='{
+              "spec": {
+                "containers": [{
+                  "name": "rails-migrate-${{ github.run_id }}",
+                  "image": "'"$IMAGE"'",
+                  "command": ["bundle", "exec", "rails", "db:migrate"],
+                  "env": [{"name": "RAILS_ENV", "value": "production"}],
+                  "envFrom": [{"secretRef": {"name": "shopstream-secrets"}}]
+                }]
+              }
+            }'

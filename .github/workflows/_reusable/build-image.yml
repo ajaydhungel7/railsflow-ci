@@ -37,7 +37,7 @@ jobs:
       - name: Set image URI
         id: meta
         run: |
-          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/shopstream:${{ inputs.image_tag }}"
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api:${{ inputs.image_tag }}"
           echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
