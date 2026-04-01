@@ -1,3 +1,5 @@
+skip = true
+
 locals {
   env        = "dev"
   account_id = get_aws_account_id()
