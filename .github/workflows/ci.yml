@@ -69,7 +69,7 @@ jobs:
 
   build:
     needs: test
-    uses: ./.github/workflows/_reusable/build-image.yml
+    uses: ./.github/workflows/build-image.yml
     with:
       image_tag: ${{ github.sha }}
     secrets: inherit

@@ -29,7 +29,7 @@ on:
 
 jobs:
   promote:
-    uses: ./.github/workflows/_reusable/promote-image.yml
+    uses: ./.github/workflows/promote-image.yml
     with:
       image_tag: ${{ inputs.image_tag }}
       environment: ${{ inputs.environment }}
@@ -37,7 +37,7 @@ jobs:
 
   migrate:
     needs: promote
-    uses: ./.github/workflows/_reusable/run-migrations.yml
+    uses: ./.github/workflows/run-migrations.yml
     with:
       environment: ${{ inputs.environment }}
       image_tag: ${{ inputs.image_tag }}
