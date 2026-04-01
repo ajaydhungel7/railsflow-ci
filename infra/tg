@@ -1,4 +1,0 @@
-#!/bin/bash
-# Terragrunt wrapper — always uses Terraform binary (not OpenTofu)
-export TG_TF_PATH=$(which terraform)
-exec terragrunt "$@"
