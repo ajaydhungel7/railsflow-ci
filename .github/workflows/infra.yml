@@ -71,6 +71,7 @@ jobs:
             })
 
   plan-prod:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -141,7 +142,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Terragrunt apply
-        run: terragrunt run --all apply --non-interactive --auto-approve
+        run: terragrunt run --all apply --non-interactive -- -auto-approve
 
   install-controllers-dev:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -173,7 +174,7 @@ jobs:
             --timeout 5m
 
   apply-prod:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.install-controllers-dev.result == 'success'
     needs: install-controllers-dev
     runs-on: ubuntu-latest
     environment: production  # manual approval gate configured in GitHub Environment settings
@@ -202,7 +203,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Terragrunt apply
-        run: terragrunt run --all apply --non-interactive --auto-approve
+        run: terragrunt run --all apply --non-interactive -- -auto-approve
 
   install-controllers-prod:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -234,7 +235,7 @@ jobs:
             --timeout 5m
 
   notify:
-    needs: [apply-dev, install-controllers-dev, apply-prod, install-controllers-prod]
+    needs: [plan-dev, apply-dev, install-controllers-dev]
     if: always()
     uses: ./.github/workflows/notify.yml
     with:
