@@ -7,7 +7,9 @@
 .terragrunt-cache/
 
 # Claude Code
-.claude/
+.claude/settings.local.json
+.claude/todos/
+.claude/projects/
 CLAUDE.md
 
 # macOS
