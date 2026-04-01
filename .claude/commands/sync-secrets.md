@@ -20,7 +20,7 @@ Then run the following in order:
 ### 1. Get RDS endpoint from terragrunt output
 ```bash
 cd /Users/ajaydhungel/Documents/railsflow-ci/infra/environments/dev/rds
-terragrunt output --tf-path=$(which terraform) --raw db_endpoint
+terragrunt output --raw db_endpoint
 ```
 
 This gives `<host>:5432`. Strip the port to get just the hostname.
