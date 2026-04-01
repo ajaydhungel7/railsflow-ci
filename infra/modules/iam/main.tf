@@ -11,6 +11,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 resource "aws_iam_role" "github_actions_deploy" {
   name = "${var.project}-${var.env}-github-actions-deploy"
+  tags = { Name = "${var.project}-${var.env}-github-actions-deploy" }
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -29,6 +30,7 @@ resource "aws_iam_role" "github_actions_deploy" {
 
 resource "aws_iam_policy" "ecr" {
   name = "${var.project}-${var.env}-ecr-access"
+  tags = { Name = "${var.project}-${var.env}-ecr-access" }
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -57,6 +59,7 @@ resource "aws_iam_policy" "ecr" {
 
 resource "aws_iam_policy" "eks" {
   name = "${var.project}-${var.env}-eks-deploy"
+  tags = { Name = "${var.project}-${var.env}-eks-deploy" }
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -86,6 +89,7 @@ locals {
 
 resource "aws_iam_role" "alb_controller" {
   name = "${var.project}-${var.env}-alb-controller"
+  tags = { Name = "${var.project}-${var.env}-alb-controller" }
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -105,6 +109,7 @@ resource "aws_iam_role" "alb_controller" {
 
 resource "aws_iam_policy" "alb_controller" {
   name   = "${var.project}-${var.env}-alb-controller"
+  tags   = { Name = "${var.project}-${var.env}-alb-controller" }
   policy = file("${path.module}/alb-controller-policy.json")
 }
 

@@ -2,6 +2,8 @@ data "aws_caller_identity" "current" {}
 
 resource "aws_iam_role" "cluster" {
   name = "${var.project}-${var.env}-eks-cluster-role"
+  tags = { Name = "${var.project}-${var.env}-eks-cluster-role" }
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -33,6 +35,8 @@ resource "aws_eks_cluster" "this" {
 
 resource "aws_iam_role" "nodes" {
   name = "${var.project}-${var.env}-eks-node-role"
+  tags = { Name = "${var.project}-${var.env}-eks-node-role" }
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

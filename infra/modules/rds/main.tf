@@ -5,11 +5,13 @@ data "aws_vpc" "this" {
 resource "aws_db_subnet_group" "this" {
   name       = "${var.project}-${var.env}"
   subnet_ids = var.private_subnets
+  tags       = { Name = "${var.project}-${var.env}-db-subnet-group" }
 }
 
 resource "aws_security_group" "rds" {
   name   = "${var.project}-${var.env}-rds"
   vpc_id = var.vpc_id
+  tags   = { Name = "${var.project}-${var.env}-rds" }
 
   ingress {
     from_port   = 5432
@@ -41,6 +43,8 @@ resource "aws_db_instance" "this" {
   vpc_security_group_ids = [aws_security_group.rds.id]
 
   storage_encrypted   = true
-  multi_az            = false
+  multi_az            = var.multi_az
   skip_final_snapshot = true
+
+  tags = { Name = "${var.project}-${var.env}-db" }
 }

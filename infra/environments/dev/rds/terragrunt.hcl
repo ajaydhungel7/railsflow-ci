@@ -22,7 +22,8 @@ inputs = {
   private_subnets   = dependency.vpc.outputs.private_subnets
   db_name           = "shopstream"
   db_username       = "shopstream"
-  db_password       = get_env("TF_VAR_db_password", "changeme-dev")
+  db_password       = get_env("TF_VAR_db_password")
   instance_class    = "db.t3.micro"
   allocated_storage = 20
+  multi_az          = false
 }
