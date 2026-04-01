@@ -116,10 +116,6 @@ jobs:
     needs: plan-dev
     runs-on: ubuntu-latest
     environment: dev
-    permissions:
-      id-token: write
-      contents: read
-      secrets: write
     defaults:
       run:
         working-directory: infra/environments/dev
@@ -146,20 +142,6 @@ jobs:
 
       - name: Terragrunt apply
         run: terragrunt run --all apply --non-interactive --auto-approve
-
-      - name: Sync outputs to GitHub secrets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh secret set AWS_DEPLOY_ROLE_ARN_DEV \
-            --body "$(cd iam && terragrunt output -raw github_actions_role_arn)" \
-            --repo ${{ github.repository }}
-          gh secret set ESO_ROLE_ARN_DEV \
-            --body "$(cd iam && terragrunt output -raw external_secrets_role_arn)" \
-            --repo ${{ github.repository }}
-          gh secret set RDS_SECRET_ARN_DEV \
-            --body "$(cd rds && terragrunt output -raw db_password_secret_arn)" \
-            --repo ${{ github.repository }}
 
   install-controllers-dev:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -195,10 +177,6 @@ jobs:
     needs: install-controllers-dev
     runs-on: ubuntu-latest
     environment: production  # manual approval gate configured in GitHub Environment settings
-    permissions:
-      id-token: write
-      contents: read
-      secrets: write
     defaults:
       run:
         working-directory: infra/environments/prod
@@ -225,20 +203,6 @@ jobs:
 
       - name: Terragrunt apply
         run: terragrunt run --all apply --non-interactive --auto-approve
-
-      - name: Sync outputs to GitHub secrets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh secret set AWS_DEPLOY_ROLE_ARN_PROD \
-            --body "$(cd iam && terragrunt output -raw github_actions_role_arn)" \
-            --repo ${{ github.repository }}
-          gh secret set ESO_ROLE_ARN_PROD \
-            --body "$(cd iam && terragrunt output -raw external_secrets_role_arn)" \
-            --repo ${{ github.repository }}
-          gh secret set RDS_SECRET_ARN_PROD \
-            --body "$(cd rds && terragrunt output -raw db_password_secret_arn)" \
-            --repo ${{ github.repository }}
 
   install-controllers-prod:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
