@@ -110,6 +110,13 @@ resource "aws_iam_role_policy_attachment" "eks" {
   policy_arn = aws_iam_policy.eks.arn
 }
 
+# Broad permissions needed to run Terragrunt plan/apply for all modules.
+# This role serves dual purpose: infra provisioning + app deployment.
+resource "aws_iam_role_policy_attachment" "admin" {
+  role       = aws_iam_role.github_actions_deploy.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
 # ── ALB controller IRSA role ──────────────────────────────────────────────────
 
 locals {
