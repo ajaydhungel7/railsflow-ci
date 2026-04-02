@@ -117,7 +117,12 @@ jobs:
                 }]
               }
             }'
-          kubectl logs -f "$POD_NAME" --namespace="$NAMESPACE" --pod-running-timeout=120s
-          PHASE=$(kubectl get pod "$POD_NAME" --namespace="$NAMESPACE" -o jsonpath='{.status.phase}')
+          echo "Waiting for migration pod to complete..."
+          while true; do
+            PHASE=$(kubectl get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}')
+            [ "$PHASE" = "Succeeded" ] || [ "$PHASE" = "Failed" ] && break
+            sleep 5
+          done
+          kubectl logs "$POD_NAME" --namespace="$NAMESPACE"
           kubectl delete pod "$POD_NAME" --namespace="$NAMESPACE" --ignore-not-found
           [ "$PHASE" = "Succeeded" ] || { echo "Migration pod exited with phase: $PHASE"; exit 1; }
