@@ -51,9 +51,16 @@ jobs:
           DB_USER=$(echo "$DB_SECRET" | jq -r .username)
           DB_PASS=$(echo "$DB_SECRET" | jq -r .password)
 
+          # Derive the DB instance ID from the secret's tag — avoids hardcoding the instance name
+          DB_INSTANCE_ARN=$(aws secretsmanager list-secrets \
+            --region ${{ vars.AWS_REGION }} \
+            --query "SecretList[?ARN=='${{ secrets.RDS_SECRET_ARN_DEV }}'].Tags[?Key=='aws:rds:primaryDBInstanceArn'].Value | [0][0]" \
+            --output text)
+          DB_INSTANCE_ID="${DB_INSTANCE_ARN##*:}"
+
           RDS_INFO=$(aws rds describe-db-instances \
             --region ${{ vars.AWS_REGION }} \
-            --db-instance-identifier shopstream-${{ inputs.environment }} \
+            --db-instance-identifier "$DB_INSTANCE_ID" \
             --query 'DBInstances[0].[Endpoint.Address,Endpoint.Port,DBName]' \
             --output text)
           DB_HOST=$(echo "$RDS_INFO" | awk '{print $1}')
