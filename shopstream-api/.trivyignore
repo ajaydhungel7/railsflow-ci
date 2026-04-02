@@ -1,9 +1,16 @@
 # CVEs with no fixed version available in Debian 13 as of 2026-04-01.
 # Re-evaluate when Debian releases patches.
 
-# libarchive13t64
+# libjxl0.11 (Debian 13 base dependency, no fix available)
+CVE-2026-1837
+
+# libheif1, libheif-plugin-libde265 (Debian 13 base dependency, no fix available)
+CVE-2025-68431
+
+# libarchive13t64 (no fix available)
 CVE-2026-4424
 CVE-2026-4111
 
-# gpgsm (gnupg2 S/MIME component, pulled in by apt infrastructure)
+# gnupg2 and components: gpg, gpg-agent, gpgconf, gpgsm, gnupg, gnupg-l10n, dirmngr
+# (apt infrastructure dependency, no fix available)
 CVE-2026-24882
