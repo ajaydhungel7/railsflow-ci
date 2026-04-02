@@ -173,6 +173,8 @@ jobs:
           if [ "$CURRENT_MODE" != "API_AND_CONFIG_MAP" ] && [ "$CURRENT_MODE" != "API" ]; then
             aws eks update-cluster-config --name shopstream-dev --region ${{ vars.AWS_REGION }} \
               --access-config authenticationMode=API_AND_CONFIG_MAP
+            # Sleep to allow the cluster status to transition to UPDATING before polling
+            sleep 20
             aws eks wait cluster-active --name shopstream-dev --region ${{ vars.AWS_REGION }}
           fi
 
@@ -184,7 +186,10 @@ jobs:
           aws eks associate-access-policy --cluster-name shopstream-dev --region ${{ vars.AWS_REGION }} \
             --principal-arn "$ROLE_ARN" \
             --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-            --access-scope type=cluster 2>/dev/null || true
+            --access-scope type=cluster
+
+          # Allow access entry to propagate before subsequent kubectl/helm calls
+          sleep 15
 
       - name: Install External Secrets Operator
         run: |
