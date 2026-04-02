@@ -36,6 +36,10 @@ jobs:
             --region ${{ vars.AWS_REGION }} \
             --name shopstream-dev
 
+      - name: Ensure namespace exists
+        run: |
+          kubectl create namespace shopstream-${{ inputs.environment }} --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Run migrations
         env:
           IMAGE: ${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api:${{ inputs.image_tag }}
