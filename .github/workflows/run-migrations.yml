@@ -39,18 +39,19 @@ jobs:
       - name: Run migrations
         env:
           IMAGE: ${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api:${{ inputs.image_tag }}
+          POD_NAME: rails-migrate-${{ github.run_id }}
+          NAMESPACE: shopstream-${{ inputs.environment }}
         run: |
-          kubectl run rails-migrate-${{ github.run_id }} \
+          kubectl run "$POD_NAME" \
             --image="$IMAGE" \
             --restart=Never \
-            --rm \
             --wait \
             --timeout=300s \
-            --namespace=shopstream-${{ inputs.environment }} \
+            --namespace="$NAMESPACE" \
             --overrides='{
               "spec": {
                 "containers": [{
-                  "name": "rails-migrate-${{ github.run_id }}",
+                  "name": "rails-migrate",
                   "image": "'"$IMAGE"'",
                   "command": ["bundle", "exec", "rails", "db:migrate"],
                   "env": [{"name": "RAILS_ENV", "value": "production"}],
@@ -58,3 +59,5 @@ jobs:
                 }]
               }
             }'
+          kubectl logs "$POD_NAME" --namespace="$NAMESPACE"
+          kubectl delete pod "$POD_NAME" --namespace="$NAMESPACE" --ignore-not-found
