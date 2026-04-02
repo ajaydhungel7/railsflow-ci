@@ -1,0 +1,9 @@
+# CVEs with no fixed version available in Debian 13 as of 2026-04-01.
+# Re-evaluate when Debian releases patches.
+
+# libarchive13t64
+CVE-2026-4424
+CVE-2026-4111
+
+# gpgsm (gnupg2 S/MIME component, pulled in by apt infrastructure)
+CVE-2026-24882
