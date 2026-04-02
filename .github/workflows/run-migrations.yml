@@ -42,35 +42,32 @@ jobs:
 
       - name: Create shopstream-secrets from AWS Secrets Manager
         run: |
-          # Discover the RDS secret by owning-service + project/environment tags.
-          # owning-service=rds is a proper filter key (no colon parsing issues).
-          RDS_SECRET_ARN=$(aws secretsmanager list-secrets \
+          # Discover RDS secret ARN and DB instance ARN in one query — avoids a second
+          # lookup that would fail due to the '!' in the managed secret name.
+          SECRET_INFO=$(aws secretsmanager list-secrets \
             --region ${{ vars.AWS_REGION }} \
             --filter Key=owning-service,Values=rds \
             --query "SecretList[?
               contains(Tags[?Key=='Project'].Value, 'shopstream') &&
               contains(Tags[?Key=='Environment'].Value, '${{ inputs.environment }}')
-            ].ARN | [0]" \
+            ].[ARN, Tags[?Key=='aws:rds:primaryDBInstanceArn'].Value | [0]]" \
             --output text)
 
+          RDS_SECRET_ARN=$(echo "$SECRET_INFO" | awk '{print $1}')
+          DB_INSTANCE_ARN=$(echo "$SECRET_INFO" | awk '{print $2}')
+          DB_INSTANCE_ID="${DB_INSTANCE_ARN##*:}"
+
           echo "Resolved RDS secret ARN: $RDS_SECRET_ARN"
+          echo "Resolved DB instance ID: $DB_INSTANCE_ID"
 
           # AWS managed RDS secret only contains username + password.
-          # Fetch connection details from the RDS instance via the secret's tag.
+          # Fetch connection details from the RDS instance.
           DB_SECRET=$(aws secretsmanager get-secret-value \
             --secret-id "$RDS_SECRET_ARN" \
             --region ${{ vars.AWS_REGION }} \
             --query SecretString --output text)
           DB_USER=$(echo "$DB_SECRET" | jq -r .username)
           DB_PASS=$(echo "$DB_SECRET" | jq -r .password)
-
-          DB_INSTANCE_ARN=$(aws secretsmanager list-secrets \
-            --region ${{ vars.AWS_REGION }} \
-            --filter Key=owning-service,Values=rds \
-            --query "SecretList[?ARN=='$RDS_SECRET_ARN'].Tags[?Key=='aws:rds:primaryDBInstanceArn'].Value | [0][0]" \
-            --output text)
-          DB_INSTANCE_ID="${DB_INSTANCE_ARN##*:}"
-          echo "Resolved DB instance ID: $DB_INSTANCE_ID"
 
           RDS_INFO=$(aws rds describe-db-instances \
             --region ${{ vars.AWS_REGION }} \
