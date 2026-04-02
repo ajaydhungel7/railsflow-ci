@@ -42,19 +42,28 @@ jobs:
 
       - name: Create shopstream-secrets from AWS Secrets Manager
         run: |
+          # Discover the RDS secret by project + environment tags — no hardcoded ARN needed.
+          RDS_SECRET_ARN=$(aws secretsmanager list-secrets \
+            --region ${{ vars.AWS_REGION }} \
+            --filter Key=tag-key,Values=aws:rds:primaryDBInstanceArn \
+            --query "SecretList[?
+              contains(Tags[?Key=='Project'].Value, 'shopstream') &&
+              contains(Tags[?Key=='Environment'].Value, '${{ inputs.environment }}')
+            ].ARN | [0]" \
+            --output text)
+
           # AWS managed RDS secret only contains username + password.
-          # Fetch connection details separately from the RDS instance.
+          # Fetch connection details from the RDS instance via the secret's tag.
           DB_SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id "${{ secrets.RDS_SECRET_ARN_DEV }}" \
+            --secret-id "$RDS_SECRET_ARN" \
             --region ${{ vars.AWS_REGION }} \
             --query SecretString --output text)
           DB_USER=$(echo "$DB_SECRET" | jq -r .username)
           DB_PASS=$(echo "$DB_SECRET" | jq -r .password)
 
-          # Derive the DB instance ID from the secret's tag — avoids hardcoding the instance name
           DB_INSTANCE_ARN=$(aws secretsmanager list-secrets \
             --region ${{ vars.AWS_REGION }} \
-            --query "SecretList[?ARN=='${{ secrets.RDS_SECRET_ARN_DEV }}'].Tags[?Key=='aws:rds:primaryDBInstanceArn'].Value | [0][0]" \
+            --query "SecretList[?ARN=='$RDS_SECRET_ARN'].Tags[?Key=='aws:rds:primaryDBInstanceArn'].Value | [0][0]" \
             --output text)
           DB_INSTANCE_ID="${DB_INSTANCE_ARN##*:}"
 

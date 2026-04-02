@@ -69,13 +69,22 @@ jobs:
 
       - name: Helm deploy
         run: |
+          RDS_SECRET_ARN=$(aws secretsmanager list-secrets \
+            --region ${{ vars.AWS_REGION }} \
+            --filter Key=tag-key,Values=aws:rds:primaryDBInstanceArn \
+            --query "SecretList[?
+              contains(Tags[?Key=='Project'].Value, 'shopstream') &&
+              contains(Tags[?Key=='Environment'].Value, '${{ inputs.environment }}')
+            ].ARN | [0]" \
+            --output text)
+
           helm upgrade --install shopstream-${{ inputs.environment }} helm/shopstream \
             --namespace shopstream-${{ inputs.environment }} \
             --create-namespace \
             --values helm/shopstream/values-${{ inputs.environment }}.yaml \
             --set image.repository="${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api" \
             --set image.tag="${{ inputs.image_tag }}" \
-            --set externalSecret.rdsSecretArn="${{ secrets.RDS_SECRET_ARN_DEV }}" \
+            --set externalSecret.rdsSecretArn="$RDS_SECRET_ARN" \
             --atomic \
             --timeout 5m
 
