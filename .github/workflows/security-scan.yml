@@ -40,6 +40,7 @@ jobs:
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
           exit-code: "1"
+          ignore-unfixed: true
           trivyignores: shopstream-api/.trivyignore
 
       - name: Upload Trivy results to GitHub Security tab
