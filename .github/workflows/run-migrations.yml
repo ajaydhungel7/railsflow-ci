@@ -40,6 +40,28 @@ jobs:
         run: |
           kubectl create namespace shopstream-${{ inputs.environment }} --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Create shopstream-secrets from AWS Secrets Manager
+        run: |
+          DB_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "${{ secrets.RDS_SECRET_ARN_DEV }}" \
+            --query SecretString --output text)
+          DB_USER=$(echo "$DB_SECRET" | jq -r .username)
+          DB_PASS=$(echo "$DB_SECRET" | jq -r .password)
+          DB_HOST=$(echo "$DB_SECRET" | jq -r .host)
+          DB_PORT=$(echo "$DB_SECRET" | jq -r .port)
+          DB_NAME=$(echo "$DB_SECRET" | jq -r .dbname)
+          DATABASE_URL="postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
+          RAILS_MASTER_KEY=$(aws secretsmanager get-secret-value \
+            --secret-id "shopstream/${{ inputs.environment }}/rails-master-key" \
+            --query SecretString --output text)
+
+          kubectl create secret generic shopstream-secrets \
+            --namespace "shopstream-${{ inputs.environment }}" \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
+            --from-literal=RAILS_MASTER_KEY="$RAILS_MASTER_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Run migrations
         env:
           IMAGE: ${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api:${{ inputs.image_tag }}
