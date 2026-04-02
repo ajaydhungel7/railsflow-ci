@@ -71,7 +71,7 @@ jobs:
         run: |
           RDS_SECRET_ARN=$(aws secretsmanager list-secrets \
             --region ${{ vars.AWS_REGION }} \
-            --filter Key=tag-key,Values=aws:rds:primaryDBInstanceArn \
+            --filter Key=owning-service,Values=rds \
             --query "SecretList[?
               contains(Tags[?Key=='Project'].Value, 'shopstream') &&
               contains(Tags[?Key=='Environment'].Value, '${{ inputs.environment }}')

@@ -42,15 +42,18 @@ jobs:
 
       - name: Create shopstream-secrets from AWS Secrets Manager
         run: |
-          # Discover the RDS secret by project + environment tags — no hardcoded ARN needed.
+          # Discover the RDS secret by owning-service + project/environment tags.
+          # owning-service=rds is a proper filter key (no colon parsing issues).
           RDS_SECRET_ARN=$(aws secretsmanager list-secrets \
             --region ${{ vars.AWS_REGION }} \
-            --filter Key=tag-key,Values=aws:rds:primaryDBInstanceArn \
+            --filter Key=owning-service,Values=rds \
             --query "SecretList[?
               contains(Tags[?Key=='Project'].Value, 'shopstream') &&
               contains(Tags[?Key=='Environment'].Value, '${{ inputs.environment }}')
             ].ARN | [0]" \
             --output text)
+
+          echo "Resolved RDS secret ARN: $RDS_SECRET_ARN"
 
           # AWS managed RDS secret only contains username + password.
           # Fetch connection details from the RDS instance via the secret's tag.
@@ -63,9 +66,11 @@ jobs:
 
           DB_INSTANCE_ARN=$(aws secretsmanager list-secrets \
             --region ${{ vars.AWS_REGION }} \
+            --filter Key=owning-service,Values=rds \
             --query "SecretList[?ARN=='$RDS_SECRET_ARN'].Tags[?Key=='aws:rds:primaryDBInstanceArn'].Value | [0][0]" \
             --output text)
           DB_INSTANCE_ID="${DB_INSTANCE_ARN##*:}"
+          echo "Resolved DB instance ID: $DB_INSTANCE_ID"
 
           RDS_INFO=$(aws rds describe-db-instances \
             --region ${{ vars.AWS_REGION }} \
