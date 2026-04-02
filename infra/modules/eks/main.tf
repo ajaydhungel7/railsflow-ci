@@ -30,7 +30,29 @@ resource "aws_eks_cluster" "this" {
     endpoint_public_access  = true
   }
 
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+  }
+
   depends_on = [aws_iam_role_policy_attachment.cluster]
+}
+
+# Grant the GitHub Actions deploy role cluster-admin access via EKS Access Entries.
+# Uses the known role name pattern to avoid a circular dependency with the IAM module.
+resource "aws_eks_access_entry" "github_actions" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-${var.env}-github-actions-deploy"
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "github_actions" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = aws_eks_access_entry.github_actions.principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
 }
 
 resource "aws_iam_role" "nodes" {
