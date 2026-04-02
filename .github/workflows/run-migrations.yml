@@ -42,18 +42,34 @@ jobs:
 
       - name: Create shopstream-secrets from AWS Secrets Manager
         run: |
+          # AWS managed RDS secret only contains username + password.
+          # Fetch connection details separately from the RDS instance.
           DB_SECRET=$(aws secretsmanager get-secret-value \
             --secret-id "${{ secrets.RDS_SECRET_ARN_DEV }}" \
+            --region ${{ vars.AWS_REGION }} \
             --query SecretString --output text)
           DB_USER=$(echo "$DB_SECRET" | jq -r .username)
           DB_PASS=$(echo "$DB_SECRET" | jq -r .password)
-          DB_HOST=$(echo "$DB_SECRET" | jq -r .host)
-          DB_PORT=$(echo "$DB_SECRET" | jq -r .port)
-          DB_NAME=$(echo "$DB_SECRET" | jq -r .dbname)
-          DATABASE_URL="postgres://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
+          RDS_INFO=$(aws rds describe-db-instances \
+            --region ${{ vars.AWS_REGION }} \
+            --db-instance-identifier shopstream-${{ inputs.environment }} \
+            --query 'DBInstances[0].[Endpoint.Address,Endpoint.Port,DBName]' \
+            --output text)
+          DB_HOST=$(echo "$RDS_INFO" | awk '{print $1}')
+          DB_PORT=$(echo "$RDS_INFO" | awk '{print $2}')
+          DB_NAME=$(echo "$RDS_INFO" | awk '{print $3}')
+
+          # URL-encode password to handle special characters (e.g. ?, ~, @)
+          DB_PASS_ENCODED=$(python3 -c \
+            "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" \
+            "$DB_PASS")
+
+          DATABASE_URL="postgres://${DB_USER}:${DB_PASS_ENCODED}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
           RAILS_MASTER_KEY=$(aws secretsmanager get-secret-value \
             --secret-id "shopstream/${{ inputs.environment }}/rails-master-key" \
+            --region ${{ vars.AWS_REGION }} \
             --query SecretString --output text)
 
           kubectl create secret generic shopstream-secrets \
