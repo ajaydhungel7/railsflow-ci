@@ -43,6 +43,9 @@ spec:
             httpGet:
               path: /up
               port: 3000
+              httpHeaders:
+                - name: X-Forwarded-Proto
+                  value: https
             initialDelaySeconds: 15
             periodSeconds: 20
             failureThreshold: 3
@@ -50,6 +53,9 @@ spec:
             httpGet:
               path: /up
               port: 3000
+              httpHeaders:
+                - name: X-Forwarded-Proto
+                  value: https
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
