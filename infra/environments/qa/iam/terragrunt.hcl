@@ -9,7 +9,7 @@ terraform {
 dependency "eks" {
   config_path = "../eks"
   mock_outputs = {
-    cluster_name      = "shopstream-prod-mock"
+    cluster_name      = "shopstream-mock"
     oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.ca-central-1.amazonaws.com/id/MOCK"
     oidc_issuer_url   = "https://oidc.eks.ca-central-1.amazonaws.com/id/MOCK"
   }
@@ -33,7 +33,7 @@ dependency "rds" {
 }
 
 inputs = {
-  env               = "prod"
+  env               = include.root.locals.env
   project           = "shopstream"
   github_org        = "ajaydhungel7"
   github_repo       = "railsflow-ci"

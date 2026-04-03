@@ -2,9 +2,10 @@
 # Branch determines the target environment:
 #   dev     → infra/environments/dev
 #   staging → infra/environments/staging
-#   main    → infra/environments/prod  (requires manual approval)
+#   main    → infra/environments/qa    (requires manual approval)
 #
-# Triggered only when files under infra/ change.
+# All three environments use the same module configs — only env.hcl differs.
+# To add a new environment: create infra/environments/<name>/env.hcl and a new branch.
 #
 # Required GitHub secrets (per environment):
 #   AWS_DEPLOY_ROLE_ARN  — IAM role ARN for OIDC auth (set per GitHub Environment)
@@ -15,9 +16,9 @@
 #   AWS_REGION           — e.g. ca-central-1
 #
 # GitHub Environments required:
-#   dev        — no approval gate
-#   staging    — no approval gate (add reviewers when ready)
-#   production — required reviewers configured
+#   dev     — no approval gate
+#   staging — no approval gate (add reviewers when ready)
+#   qa      — required reviewers configured
 
 name: Infra
 
@@ -38,7 +39,7 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     # Use the target branch environment so the plan uses the correct AWS role.
-    environment: ${{ (github.base_ref == 'main' || github.ref_name == 'main') && 'production' || (github.base_ref == 'staging' || github.ref_name == 'staging') && 'staging' || 'dev' }}
+    environment: ${{ (github.base_ref == 'main' || github.ref_name == 'main') && 'qa' || (github.base_ref == 'staging' || github.ref_name == 'staging') && 'staging' || 'dev' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +50,7 @@ jobs:
           # For PRs use the base branch; for pushes use the branch itself.
           BRANCH="${{ github.base_ref || github.ref_name }}"
           case "$BRANCH" in
-            main)    echo "name=production"; echo "dir=prod" ;;
+            main)    echo "name=qa"; echo "dir=qa" ;;
             staging) echo "name=staging";    echo "dir=staging" ;;
             *)       echo "name=dev";        echo "dir=dev" ;;
           esac >> "$GITHUB_OUTPUT"
@@ -92,8 +93,8 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     # Maps branch → GitHub Environment, enforcing approval rules configured there.
-    # production environment requires manual reviewer approval before this job runs.
-    environment: ${{ github.ref_name == 'main' && 'production' || github.ref_name }}
+    # qa environment requires manual reviewer approval before this job runs.
+    environment: ${{ github.ref_name == 'main' && 'qa' || github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -132,16 +133,16 @@ jobs:
     if: github.event_name == 'push'
     needs: apply
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || github.ref_name }}
+    environment: ${{ github.ref_name == 'main' && 'qa' || github.ref_name }}
 
     steps:
       - name: Resolve environment
         id: env
         run: |
           case "${{ github.ref_name }}" in
-            main)    echo "name=production"; echo "cluster=shopstream-production" ;;
-            staging) echo "name=staging";    echo "cluster=shopstream-staging" ;;
-            *)       echo "name=dev";        echo "cluster=shopstream-dev" ;;
+            main)    echo "name=qa";      echo "cluster=shopstream-qa" ;;
+            staging) echo "name=staging"; echo "cluster=shopstream-staging" ;;
+            *)       echo "name=dev";     echo "cluster=shopstream-dev" ;;
           esac >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
@@ -208,6 +209,6 @@ jobs:
     with:
       status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
       workflow: Infra
-      environment: ${{ github.ref_name == 'main' && 'production' || github.ref_name }}
+      environment: ${{ github.ref_name == 'main' && 'qa' || github.ref_name }}
       ref: ${{ github.sha }}
     secrets: inherit

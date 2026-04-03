@@ -7,7 +7,7 @@ terraform {
 }
 
 inputs = {
-  env             = "prod"
+  env             = include.root.locals.env
   project         = "shopstream"
-  retention_count = 30
+  retention_count = 10
 }

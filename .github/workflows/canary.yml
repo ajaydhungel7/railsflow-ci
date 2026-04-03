@@ -1,7 +1,7 @@
 # Canary deployment workflow: routes 10% of production traffic to the new image,
 # monitors error rates for 10 minutes via canary-check.sh, then either promotes
 # to full rollout or automatically triggers rollback.yml on elevated errors.
-# Requires manual approval via the "production" GitHub Environment before running.
+# Requires manual approval via the "qa" GitHub Environment before running.
 
 name: Canary Deploy
 
@@ -24,21 +24,21 @@ jobs:
     uses: ./.github/workflows/promote-image.yml
     with:
       image_tag: ${{ inputs.image_tag }}
-      environment: production
+      environment: qa
     secrets: inherit
 
   migrate:
     needs: promote
     uses: ./.github/workflows/run-migrations.yml
     with:
-      environment: production
+      environment: qa
       image_tag: ${{ inputs.image_tag }}
     secrets: inherit
 
   canary-deploy:
     needs: migrate
     runs-on: ubuntu-latest
-    environment: production   # manual approval gate lives here
+    environment: qa   # manual approval gate lives here
 
     steps:
       - uses: actions/checkout@v4
@@ -57,13 +57,13 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ vars.AWS_REGION }} \
-            --name shopstream-production
+            --name shopstream-qa
 
       - name: Deploy canary (10% traffic)
         run: |
           helm upgrade --install shopstream-canary helm/shopstream \
             --namespace shopstream \
-            --values helm/shopstream/values-production.yaml \
+            --values helm/shopstream/values-qa.yaml \
             --set image.repository="${{ steps.login-ecr.outputs.registry }}/shopstream" \
             --set image.tag="${{ inputs.image_tag }}" \
             --set replicaCount=1 \
@@ -81,7 +81,7 @@ jobs:
         run: |
           helm upgrade --install shopstream helm/shopstream \
             --namespace shopstream \
-            --values helm/shopstream/values-production.yaml \
+            --values helm/shopstream/values-qa.yaml \
             --set image.repository="${{ steps.login-ecr.outputs.registry }}/shopstream" \
             --set image.tag="${{ inputs.image_tag }}" \
             --atomic \
@@ -95,7 +95,7 @@ jobs:
           helm uninstall shopstream-canary --namespace shopstream || true
           echo "Canary failed — triggering rollback"
           bash scripts/rollback.sh \
-            --env production \
+            --env qa \
             --repo ${{ github.repository }} \
             --token ${{ secrets.GITHUB_TOKEN }}
           exit 1
@@ -107,6 +107,6 @@ jobs:
     with:
       status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
       workflow: "Canary Deploy"
-      environment: production
+      environment: qa
       ref: ${{ inputs.image_tag }}
     secrets: inherit

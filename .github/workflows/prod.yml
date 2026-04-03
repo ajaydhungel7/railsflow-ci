@@ -1,13 +1,13 @@
 # Production CI pipeline — runs on every push to main.
 # Flow: test → build image → security scan → canary deploy (10% traffic, 10 min monitoring)
 #
-# Production requires manual approval via the "production" GitHub Environment.
+# Production requires manual approval via the "qa" GitHub Environment.
 # Canary automatically rolls back if error rates are elevated during the monitoring window.
 #
 # Dev deploys are handled by ci.yml (push to dev branch).
 # Staging deploys are handled by staging.yml (push to staging branch).
 #
-# Required GitHub secrets (production environment):
+# Required GitHub secrets (qa environment):
 #   AWS_DEPLOY_ROLE_ARN  — IAM role ARN for OIDC auth
 #   SLACK_WEBHOOK_URL    — Slack notifications
 #   GITHUB_TOKEN         — Auto-provided; used by rollback.sh

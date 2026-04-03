@@ -1,3 +1,7 @@
+locals {
+  env_vars = read_terragrunt_config(find_in_parent_folders("env.hcl"))
+}
+
 include "root" {
   path = find_in_parent_folders("root.hcl")
 }
@@ -16,12 +20,12 @@ dependency "vpc" {
 }
 
 inputs = {
-  env                = "prod"
+  env                = include.root.locals.env
   project            = "shopstream"
   private_subnets    = dependency.vpc.outputs.private_subnets
   cluster_version    = "1.32"
-  node_instance_type = "t2.medium"
-  node_desired_size  = 3
-  node_min_size      = 2
-  node_max_size      = 6
+  node_instance_type = local.env_vars.locals.node_instance_type
+  node_desired_size  = local.env_vars.locals.node_desired_size
+  node_min_size      = local.env_vars.locals.node_min_size
+  node_max_size      = local.env_vars.locals.node_max_size
 }
