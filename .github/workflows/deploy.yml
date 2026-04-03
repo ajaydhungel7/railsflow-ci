@@ -18,10 +18,10 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment: dev | staging"
+        description: "Target environment: dev | staging | production"
         required: true
         type: choice
-        options: [dev, staging]
+        options: [dev, staging, production]
       image_tag:
         description: "Image tag (commit SHA) to deploy"
         required: true
@@ -65,7 +65,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ vars.AWS_REGION }} \
-            --name shopstream-dev
+            --name shopstream-${{ inputs.environment }}
 
       - name: Helm deploy
         run: |

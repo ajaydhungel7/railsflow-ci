@@ -1,26 +1,29 @@
-# Staging CI pipeline — runs on every push to the staging branch.
-# Flow: test → build image → security scan → deploy staging
+# Production CI pipeline — runs on every push to main.
+# Flow: test → build image → security scan → canary deploy (10% traffic, 10 min monitoring)
+#
+# Production requires manual approval via the "production" GitHub Environment.
+# Canary automatically rolls back if error rates are elevated during the monitoring window.
 #
 # Dev deploys are handled by ci.yml (push to dev branch).
-# Production deploys are handled by prod.yml (push to main branch).
+# Staging deploys are handled by staging.yml (push to staging branch).
 #
-# Required GitHub secrets (staging environment):
+# Required GitHub secrets (production environment):
 #   AWS_DEPLOY_ROLE_ARN  — IAM role ARN for OIDC auth
 #   SLACK_WEBHOOK_URL    — Slack notifications
+#   GITHUB_TOKEN         — Auto-provided; used by rollback.sh
 #
 # Required GitHub variables:
 #   AWS_REGION           — e.g. ca-central-1
 #   BRAKEMAN_OUTPUT_FORMAT — e.g. text (optional, defaults to text)
 
-name: CI (Staging)
+name: CI (Prod)
 
 on:
   push:
-    branches: [staging]
+    branches: [main]
     paths-ignore:
       - "infra/**"
       - "**.md"
-  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -84,20 +87,19 @@ jobs:
       image_tag: ${{ github.sha }}
     secrets: inherit
 
-  deploy-staging:
+  deploy-prod:
     needs: security
-    uses: ./.github/workflows/deploy.yml
+    uses: ./.github/workflows/canary.yml
     with:
-      environment: staging
       image_tag: ${{ github.sha }}
     secrets: inherit
 
   notify:
-    needs: [test, build, security, deploy-staging]
+    needs: [test, build, security, deploy-prod]
     if: always()
     uses: ./.github/workflows/notify.yml
     with:
       status: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || 'success') }}
-      workflow: "CI (Staging)"
+      workflow: "CI (Prod)"
       ref: ${{ github.sha }}
     secrets: inherit

@@ -34,7 +34,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ vars.AWS_REGION }} \
-            --name shopstream-dev
+            --name shopstream-${{ inputs.environment }}
 
       - name: Ensure namespace exists
         run: |
