@@ -1,0 +1,57 @@
+# Staging deployment pipeline.
+# Triggered manually (workflow_dispatch) or automatically after CI passes on main (workflow_run).
+# Runs promote → migrations → Helm rollout against the staging environment.
+#
+# Required GitHub secrets (staging environment):
+#   AWS_DEPLOY_ROLE_ARN  — IAM role ARN for OIDC auth
+#   SLACK_WEBHOOK_URL    — Slack notifications
+#
+# Required GitHub variables:
+#   AWS_REGION           — e.g. ca-central-1
+
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag (commit SHA) to deploy. Defaults to latest main SHA."
+        required: false
+        type: string
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  resolve-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  check-ci:
+    needs: resolve-tag
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: CI passed — proceeding to staging
+        run: echo "Deploying ${{ needs.resolve-tag.outputs.image_tag }} to staging"
+
+  deploy:
+    needs: [resolve-tag, check-ci]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      image_tag: ${{ needs.resolve-tag.outputs.image_tag }}
+    secrets: inherit
