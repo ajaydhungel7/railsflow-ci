@@ -1,0 +1,3 @@
+# Any PR that modifies workflow files requires explicit approval.
+# This prevents accidental or unauthorized pipeline changes.
+.github/workflows/ @ajaydhungel7
