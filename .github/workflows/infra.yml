@@ -23,11 +23,15 @@
 name: Infra
 
 on:
+  # dev and staging: apply on direct push (branch push or PR merge)
   push:
-    branches: [dev, staging, main]
+    branches: [dev, staging]
     paths: ["infra/**"]
+  # all branches: plan on open PRs
+  # prod (main): apply only on merged PRs
   pull_request:
     branches: [dev, staging, main]
+    types: [opened, synchronize, reopened, closed]
     paths: ["infra/**"]
 
 permissions:
@@ -37,6 +41,11 @@ permissions:
 
 jobs:
   plan:
+    # Skip if a PR was closed without merging
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.action != 'closed') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
     # Use the target branch environment so the plan uses the correct AWS role.
     environment: ${{ (github.base_ref == 'main' || github.ref_name == 'main') && 'prod' || (github.base_ref == 'staging' || github.ref_name == 'staging') && 'staging' || 'dev' }}
@@ -89,7 +98,10 @@ jobs:
             })
 
   apply:
-    if: github.event_name == 'push'
+    # dev/staging: run on push; prod (main): run only on merged PRs
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.base_ref == 'main')
     needs: plan
     runs-on: ubuntu-latest
     # Maps branch → GitHub Environment, enforcing approval rules configured there.
@@ -130,7 +142,9 @@ jobs:
         run: terragrunt run --all apply --non-interactive -- -auto-approve
 
   install-controllers:
-    if: github.event_name == 'push'
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.base_ref == 'main')
     needs: apply
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'prod' || github.ref_name }}
