@@ -1,8 +1,11 @@
-# Staging CI pipeline — runs on every push to the staging branch.
-# Flow: test → build image → security scan → deploy staging
+# Staging deployment pipeline — runs on push to the staging branch.
+# Promotes the current 'dev' image to staging — no rebuild.
+# The same binary that passed dev is what gets deployed here.
 #
-# Dev deploys are handled by ci.yml (push to dev branch).
-# Production deploys are handled by prod.yml (push to main branch).
+# Flow: promote (dev → staging) → migrate → helm deploy
+#
+# To deploy a specific build instead of the latest dev image,
+# use workflow_dispatch and provide an explicit image_tag.
 #
 # Required GitHub secrets (staging environment):
 #   AWS_DEPLOY_ROLE_ARN  — IAM role ARN for OIDC auth
@@ -10,9 +13,8 @@
 #
 # Required GitHub variables:
 #   AWS_REGION           — e.g. ca-central-1
-#   BRAKEMAN_OUTPUT_FORMAT — e.g. text (optional, defaults to text)
 
-name: CI (Staging)
+name: Deploy Staging
 
 on:
   push:
@@ -21,83 +23,33 @@ on:
       - "infra/**"
       - "**.md"
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "ECR tag to promote and deploy (default: dev)"
+        required: false
+        type: string
 
 permissions:
   id-token: write
   contents: read
-  security-events: write
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: shopstream-api
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: shopstream
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: shopstream_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      RAILS_ENV: test
-      DATABASE_URL: postgres://shopstream:testpassword@localhost:5432/shopstream_test
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.4.9"
-          bundler-cache: true
-          working-directory: shopstream-api
-
-      - name: Setup DB
-        run: bundle exec rails db:schema:load
-
-      - name: Run tests
-        run: bundle exec rails test
-
-      - name: Run linter
-        run: bundle exec rubocop --format github
-
-  build:
-    needs: test
-    uses: ./.github/workflows/build-image.yml
-    with:
-      image_tag: ${{ github.sha }}
-    secrets: inherit
-
-  security:
-    needs: build
-    uses: ./.github/workflows/security-scan.yml
-    with:
-      image_tag: ${{ github.sha }}
-    secrets: inherit
-
-  deploy-staging:
-    needs: security
+  deploy:
     uses: ./.github/workflows/deploy.yml
     with:
       environment: staging
-      image_tag: ${{ github.sha }}
+      # Default to 'dev' so staging always promotes whatever is currently blessed in dev.
+      # Override via workflow_dispatch to deploy a specific tag or SHA.
+      image_tag: ${{ inputs.image_tag || 'dev' }}
     secrets: inherit
 
   notify:
-    needs: [test, build, security, deploy-staging]
+    needs: [deploy]
     if: always()
     uses: ./.github/workflows/notify.yml
     with:
-      status: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || 'success') }}
-      workflow: "CI (Staging)"
-      ref: ${{ github.sha }}
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      workflow: "Deploy Staging"
+      environment: staging
+      ref: ${{ inputs.image_tag || 'dev' }}
     secrets: inherit

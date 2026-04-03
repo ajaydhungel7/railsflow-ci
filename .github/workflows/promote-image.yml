@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       environment:
-        description: "Target environment label to apply (dev, staging, production)"
+        description: "Target environment label to apply (dev, staging, prod)"
         required: true
         type: string
 

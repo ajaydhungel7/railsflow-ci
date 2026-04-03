@@ -1,22 +1,26 @@
-# Production CI pipeline — runs on every push to main.
-# Flow: test → build image → security scan → canary deploy (10% traffic, 10 min monitoring)
+# Production deployment pipeline — runs on merged PRs to main.
+# Promotes the current 'staging' image to prod — no rebuild.
+# The same binary that passed staging is what gets deployed here.
+#
+# Flow: promote (staging → prod) → canary deploy (10% traffic, 10 min monitoring)
 #
 # Production requires manual approval via the "prod" GitHub Environment.
 # Canary automatically rolls back if error rates are elevated during the monitoring window.
 #
-# Dev deploys are handled by ci.yml (push to dev branch).
-# Staging deploys are handled by staging.yml (push to staging branch).
+# To deploy a specific build instead of the latest staging image,
+# use workflow_dispatch and provide an explicit image_tag.
+#
+# Dev CI (test + build) is handled by ci.yml (push to dev branch).
+# Staging promotion is handled by staging.yml (push to staging branch).
 #
 # Required GitHub secrets (prod environment):
 #   AWS_DEPLOY_ROLE_ARN  — IAM role ARN for OIDC auth
 #   SLACK_WEBHOOK_URL    — Slack notifications
-#   GITHUB_TOKEN         — Auto-provided; used by rollback.sh
 #
 # Required GitHub variables:
 #   AWS_REGION           — e.g. ca-central-1
-#   BRAKEMAN_OUTPUT_FORMAT — e.g. text (optional, defaults to text)
 
-name: CI (Prod)
+name: Deploy Prod
 
 on:
   pull_request:
@@ -25,83 +29,34 @@ on:
     paths-ignore:
       - "infra/**"
       - "**.md"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "ECR tag to promote and deploy (default: staging)"
+        required: false
+        type: string
 
 permissions:
   id-token: write
   contents: read
-  security-events: write
 
 jobs:
-  test:
-    if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: shopstream-api
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: shopstream
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: shopstream_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    env:
-      RAILS_ENV: test
-      DATABASE_URL: postgres://shopstream:testpassword@localhost:5432/shopstream_test
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.4.9"
-          bundler-cache: true
-          working-directory: shopstream-api
-
-      - name: Setup DB
-        run: bundle exec rails db:schema:load
-
-      - name: Run tests
-        run: bundle exec rails test
-
-      - name: Run linter
-        run: bundle exec rubocop --format github
-
-  build:
-    needs: test
-    uses: ./.github/workflows/build-image.yml
-    with:
-      image_tag: ${{ github.sha }}
-    secrets: inherit
-
-  security:
-    needs: build
-    uses: ./.github/workflows/security-scan.yml
-    with:
-      image_tag: ${{ github.sha }}
-    secrets: inherit
-
   deploy-prod:
-    needs: security
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     uses: ./.github/workflows/canary.yml
     with:
-      image_tag: ${{ github.sha }}
+      # Default to 'staging' so prod always promotes whatever is currently blessed in staging.
+      # Override via workflow_dispatch to deploy a specific tag or SHA.
+      image_tag: ${{ inputs.image_tag || 'staging' }}
     secrets: inherit
 
   notify:
-    needs: [test, build, security, deploy-prod]
+    needs: [deploy-prod]
     if: always()
     uses: ./.github/workflows/notify.yml
     with:
       status: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || 'success') }}
-      workflow: "CI (Prod)"
-      ref: ${{ github.sha }}
+      workflow: "Deploy Prod"
+      environment: prod
+      ref: ${{ inputs.image_tag || 'staging' }}
     secrets: inherit

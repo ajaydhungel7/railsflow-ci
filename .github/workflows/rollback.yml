@@ -11,7 +11,7 @@ on:
         description: "Environment to roll back"
         required: true
         type: choice
-        options: [dev, staging, production]
+        options: [dev, staging, prod]
       image_tag:
         description: "Known-good image tag (commit SHA) to restore"
         required: true
