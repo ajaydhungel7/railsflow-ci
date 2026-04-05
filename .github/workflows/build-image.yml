@@ -2,7 +2,7 @@
 # Called by ci.yml after tests pass. Tags with the commit SHA.
 # Image is never rebuilt for subsequent environments — only re-tagged (see promote-image.yml).
 
-name: Build Image
+name: Build — Push Docker Image to ECR
 
 on:
   workflow_call:

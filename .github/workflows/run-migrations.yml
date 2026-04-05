@@ -2,7 +2,7 @@
 # Called by deploy.yml before each environment's Helm rollout.
 # Job is deleted after completion regardless of outcome.
 
-name: Run Migrations
+name: Migrate — Rails DB Migrations
 
 on:
   workflow_call:

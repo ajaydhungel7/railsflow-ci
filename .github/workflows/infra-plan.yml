@@ -14,7 +14,7 @@
 # Required GitHub variables:
 #   AWS_REGION           — e.g. ca-central-1
 
-name: Infra — Plan
+name: Infra — Plan (Terragrunt)
 
 on:
   push:
