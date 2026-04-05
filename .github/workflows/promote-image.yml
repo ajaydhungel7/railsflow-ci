@@ -2,7 +2,7 @@
 # Retags the SHA-tagged image with an environment label (e.g. dev, staging, production).
 # No rebuild — the same image binary is promoted across all environments.
 
-name: Promote Image
+name: Promote — Retag ECR Image
 
 on:
   workflow_call:

@@ -3,7 +3,7 @@
 # to full rollout or automatically triggers rollback.yml on elevated errors.
 # Requires manual approval via the "prod" GitHub Environment before running.
 
-name: Canary Deploy
+name: Deploy Prod — Canary Rollout (10%)
 
 on:
   workflow_call:

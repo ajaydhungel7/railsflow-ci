@@ -2,7 +2,7 @@
 # Called by ci.yml after the image is built. Blocks the pipeline on any HIGH or CRITICAL findings.
 # continue-on-error is intentionally never set here — security failures must stop the pipeline.
 
-name: Security Scan
+name: Security — Trivy + Brakeman
 
 on:
   workflow_call:
