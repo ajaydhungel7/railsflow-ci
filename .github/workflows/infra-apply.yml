@@ -1,21 +1,28 @@
-# Prod infrastructure apply — provisions or updates prod AWS resources.
-# Always run infra-prod-plan first and have changes reviewed.
+# Infrastructure apply — provisions or updates AWS resources.
+# Always run Infra — Plan first and review the output before applying.
+#
+# Manual trigger only — pick the environment from the dropdown.
+# prod requires approval from the "prod" GitHub Environment before running.
 #
 # After apply, reads the ESO role ARN from Terraform outputs and installs
 # External Secrets Operator on the cluster — no ESO_ROLE_ARN secret required.
-# Manually triggered only. Requires approval from the "prod" GitHub Environment
-# before the apply job runs.
 #
-# Required GitHub secrets (prod environment):
+# Required GitHub secrets (scoped per environment):
 #   AWS_DEPLOY_ROLE_ARN  — IAM role ARN for OIDC auth
 #
 # Required GitHub variables:
 #   AWS_REGION           — e.g. ca-central-1
 
-name: Infra Prod — Apply
+name: Infra — Apply
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to apply"
+        required: true
+        type: choice
+        options: [dev, staging, prod]
 
 permissions:
   id-token: write
@@ -24,7 +31,7 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    environment: prod   # manual approval gate — configure required reviewers in GitHub
+    environment: ${{ inputs.environment }}
     outputs:
       eso_role_arn: ${{ steps.tf-outputs.outputs.eso_role_arn }}
 
@@ -50,19 +57,19 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Terragrunt apply
-        working-directory: infra/environments/prod
+        working-directory: infra/environments/${{ inputs.environment }}
         run: terragrunt run --all apply --non-interactive -- -auto-approve
 
       - name: Read ESO role ARN from Terraform outputs
         id: tf-outputs
-        working-directory: infra/environments/prod/iam
+        working-directory: infra/environments/${{ inputs.environment }}/iam
         run: |
           echo "eso_role_arn=$(terragrunt output -raw external_secrets_role_arn)" >> "$GITHUB_OUTPUT"
 
   install-controllers:
     needs: apply
     runs-on: ubuntu-latest
-    environment: prod
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Configure AWS credentials (OIDC)
@@ -75,35 +82,35 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ vars.AWS_REGION }} \
-            --name shopstream-prod
+            --name shopstream-${{ inputs.environment }}
 
       - name: Grant deploy role EKS cluster-admin access
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/shopstream-prod-github-actions-deploy"
+          ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/shopstream-${{ inputs.environment }}-github-actions-deploy"
 
           CURRENT_MODE=$(aws eks describe-cluster \
-            --name shopstream-prod \
+            --name shopstream-${{ inputs.environment }} \
             --region ${{ vars.AWS_REGION }} \
             --query 'cluster.accessConfig.authenticationMode' --output text)
           if [ "$CURRENT_MODE" != "API_AND_CONFIG_MAP" ] && [ "$CURRENT_MODE" != "API" ]; then
             aws eks update-cluster-config \
-              --name shopstream-prod \
+              --name shopstream-${{ inputs.environment }} \
               --region ${{ vars.AWS_REGION }} \
               --access-config authenticationMode=API_AND_CONFIG_MAP
             sleep 20
             aws eks wait cluster-active \
-              --name shopstream-prod \
+              --name shopstream-${{ inputs.environment }} \
               --region ${{ vars.AWS_REGION }}
           fi
 
           aws eks create-access-entry \
-            --cluster-name shopstream-prod \
+            --cluster-name shopstream-${{ inputs.environment }} \
             --region ${{ vars.AWS_REGION }} \
             --principal-arn "$ROLE_ARN" 2>/dev/null || true
 
           aws eks associate-access-policy \
-            --cluster-name shopstream-prod \
+            --cluster-name shopstream-${{ inputs.environment }} \
             --region ${{ vars.AWS_REGION }} \
             --principal-arn "$ROLE_ARN" \
             --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
@@ -128,7 +135,7 @@ jobs:
     uses: ./.github/workflows/notify.yml
     with:
       status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
-      workflow: "Infra Prod — Apply"
-      environment: prod
+      workflow: "Infra — Apply"
+      environment: ${{ inputs.environment }}
       ref: ${{ github.sha }}
     secrets: inherit
