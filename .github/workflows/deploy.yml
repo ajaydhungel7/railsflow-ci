@@ -2,7 +2,7 @@
 # Used for dev and staging. Production goes through canary.yml instead.
 # Called by ci.yml sequentially (dev first, then staging on success).
 
-name: Deploy
+name: Deploy — Migrate & Helm Rollout
 
 on:
   workflow_call:

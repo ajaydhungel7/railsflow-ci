@@ -2,7 +2,7 @@
 # Called at the end of every workflow (ci, deploy, canary, rollback, security-scan, infra).
 # Always runs with if: always() at the call site so failures are reported too.
 
-name: Notify
+name: Notify — Slack Pipeline Status
 
 on:
   workflow_call:

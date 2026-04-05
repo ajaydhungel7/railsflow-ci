@@ -13,7 +13,7 @@
 # Required GitHub variables:
 #   AWS_REGION           — e.g. ca-central-1
 
-name: Infra — Apply
+name: Infra — Apply (Terragrunt + ESO)
 
 on:
   workflow_dispatch:

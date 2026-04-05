@@ -2,7 +2,7 @@
 # Triggered automatically by canary.yml on elevated errors, or manually via workflow_dispatch.
 # The last successful image tag must be provided explicitly — no magic version detection.
 
-name: Rollback
+name: Rollback — Redeploy Known-Good Image
 
 on:
   workflow_dispatch:
