@@ -1,9 +1,10 @@
-# Staging deployment pipeline — runs on push to the staging branch.
+# Staging deployment pipeline — runs on merged PRs to the staging branch.
 # Promotes the current 'dev' image to staging — no rebuild.
 # The same binary that passed dev is what gets deployed here.
 #
 # Flow: promote (dev → staging) → migrate → helm deploy
 #
+# Only merged PRs trigger this — direct pushes to staging are ignored.
 # To deploy a specific build instead of the latest dev image,
 # use workflow_dispatch and provide an explicit image_tag.
 #
@@ -17,8 +18,9 @@
 name: Deploy Staging
 
 on:
-  push:
+  pull_request:
     branches: [staging]
+    types: [closed]
     paths-ignore:
       - "infra/**"
       - "**.md"
@@ -35,11 +37,10 @@ permissions:
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     uses: ./.github/workflows/deploy.yml
     with:
       environment: staging
-      # Default to 'dev' so staging always promotes whatever is currently blessed in dev.
-      # Override via workflow_dispatch to deploy a specific tag or SHA.
       image_tag: ${{ inputs.image_tag || 'dev' }}
     secrets: inherit
 
