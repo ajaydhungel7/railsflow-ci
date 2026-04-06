@@ -1,0 +1,128 @@
+# Reusable workflow: run Rails DB migrations as a one-off Kubernetes Job.
+# Called by deploy.yml before each environment's Helm rollout.
+# Job is deleted after completion regardless of outcome.
+
+name: Migrate — Rails DB Migrations
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ vars.AWS_REGION }} \
+            --name shopstream-${{ inputs.environment }}
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl create namespace shopstream-${{ inputs.environment }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create shopstream-secrets from AWS Secrets Manager
+        run: |
+          # Discover RDS secret ARN and DB instance ARN in one query — avoids a second
+          # lookup that would fail due to the '!' in the managed secret name.
+          SECRET_INFO=$(aws secretsmanager list-secrets \
+            --region ${{ vars.AWS_REGION }} \
+            --filter Key=owning-service,Values=rds \
+            --query "SecretList[?
+              contains(Tags[?Key=='Project'].Value, 'shopstream') &&
+              contains(Tags[?Key=='Environment'].Value, '${{ inputs.environment }}')
+            ].[ARN, Tags[?Key=='aws:rds:primaryDBInstanceArn'].Value | [0]]" \
+            --output text)
+
+          RDS_SECRET_ARN=$(echo "$SECRET_INFO" | awk '{print $1}')
+          DB_INSTANCE_ARN=$(echo "$SECRET_INFO" | awk '{print $2}')
+          DB_INSTANCE_ID="${DB_INSTANCE_ARN##*:}"
+
+          echo "Resolved RDS secret ARN: $RDS_SECRET_ARN"
+          echo "Resolved DB instance ID: $DB_INSTANCE_ID"
+
+          # AWS managed RDS secret only contains username + password.
+          # Fetch connection details from the RDS instance.
+          DB_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "$RDS_SECRET_ARN" \
+            --region ${{ vars.AWS_REGION }} \
+            --query SecretString --output text)
+          DB_USER=$(echo "$DB_SECRET" | jq -r .username)
+          DB_PASS=$(echo "$DB_SECRET" | jq -r .password)
+
+          RDS_INFO=$(aws rds describe-db-instances \
+            --region ${{ vars.AWS_REGION }} \
+            --db-instance-identifier "$DB_INSTANCE_ID" \
+            --query 'DBInstances[0].[Endpoint.Address,Endpoint.Port,DBName]' \
+            --output text)
+          DB_HOST=$(echo "$RDS_INFO" | awk '{print $1}')
+          DB_PORT=$(echo "$RDS_INFO" | awk '{print $2}')
+          DB_NAME=$(echo "$RDS_INFO" | awk '{print $3}')
+
+          # URL-encode password to handle special characters (e.g. ?, ~, @)
+          DB_PASS_ENCODED=$(python3 -c \
+            "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" \
+            "$DB_PASS")
+
+          DATABASE_URL="postgres://${DB_USER}:${DB_PASS_ENCODED}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
+          RAILS_MASTER_KEY=$(aws secretsmanager get-secret-value \
+            --secret-id "shopstream/${{ inputs.environment }}/rails-master-key" \
+            --region ${{ vars.AWS_REGION }} \
+            --query SecretString --output text)
+
+          kubectl create secret generic shopstream-secrets \
+            --namespace "shopstream-${{ inputs.environment }}" \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
+            --from-literal=RAILS_MASTER_KEY="$RAILS_MASTER_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Run migrations
+        env:
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api:${{ inputs.image_tag }}
+          POD_NAME: rails-migrate-${{ github.run_id }}
+          NAMESPACE: shopstream-${{ inputs.environment }}
+        run: |
+          kubectl run "$POD_NAME" \
+            --image="$IMAGE" \
+            --restart=Never \
+            --namespace="$NAMESPACE" \
+            --overrides='{
+              "spec": {
+                "containers": [{
+                  "name": "rails-migrate",
+                  "image": "'"$IMAGE"'",
+                  "command": ["bundle", "exec", "rails", "db:migrate"],
+                  "env": [{"name": "RAILS_ENV", "value": "production"}],
+                  "envFrom": [{"secretRef": {"name": "shopstream-secrets"}}]
+                }]
+              }
+            }'
+          echo "Waiting for migration pod to complete..."
+          while true; do
+            PHASE=$(kubectl get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}')
+            [ "$PHASE" = "Succeeded" ] || [ "$PHASE" = "Failed" ] && break
+            sleep 5
+          done
+          kubectl logs "$POD_NAME" --namespace="$NAMESPACE"
+          kubectl delete pod "$POD_NAME" --namespace="$NAMESPACE" --ignore-not-found
+          [ "$PHASE" = "Succeeded" ] || { echo "Migration pod exited with phase: $PHASE"; exit 1; }

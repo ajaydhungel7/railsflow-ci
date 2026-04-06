@@ -1,0 +1,62 @@
+# Production deployment pipeline — runs on merged PRs to main.
+# Promotes the current 'staging' image to prod — no rebuild.
+# The same binary that passed staging is what gets deployed here.
+#
+# Flow: promote (staging → prod) → canary deploy (10% traffic, 10 min monitoring)
+#
+# Production requires manual approval via the "prod" GitHub Environment.
+# Canary automatically rolls back if error rates are elevated during the monitoring window.
+#
+# To deploy a specific build instead of the latest staging image,
+# use workflow_dispatch and provide an explicit image_tag.
+#
+# Dev CI (test + build) is handled by ci.yml (push to dev branch).
+# Staging promotion is handled by staging.yml (push to staging branch).
+#
+# Required GitHub secrets (prod environment):
+#   AWS_DEPLOY_ROLE_ARN  — IAM role ARN for OIDC auth
+#   SLACK_WEBHOOK_URL    — Slack notifications
+#
+# Required GitHub variables:
+#   AWS_REGION           — e.g. ca-central-1
+
+name: Deploy Prod
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+    paths-ignore:
+      - "infra/**"
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "ECR tag to promote and deploy (default: staging)"
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-prod:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    uses: ./.github/workflows/canary.yml
+    with:
+      # Default to 'staging' so prod always promotes whatever is currently blessed in staging.
+      # Override via workflow_dispatch to deploy a specific tag or SHA.
+      image_tag: ${{ inputs.image_tag || 'staging' }}
+    secrets: inherit
+
+  notify:
+    needs: [deploy-prod]
+    if: always()
+    uses: ./.github/workflows/notify.yml
+    with:
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || (contains(needs.*.result, 'cancelled') && 'cancelled' || 'success') }}
+      workflow: "Deploy Prod"
+      environment: prod
+      ref: ${{ inputs.image_tag || 'staging' }}
+    secrets: inherit
