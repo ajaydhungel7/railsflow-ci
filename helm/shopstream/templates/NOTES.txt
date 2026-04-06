@@ -1,0 +1,26 @@
+ShopStream API deployed successfully.
+
+Get the ALB URL (may take 1-2 minutes to provision):
+
+  kubectl get ingress {{ include "shopstream.fullname" . }} \
+    -n shopstream \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+Then test the health check:
+
+  curl http://<ALB_DNS>/up
+
+API endpoints:
+  GET  /api/v1/products
+  GET  /api/v1/products/:id
+  POST /api/v1/products
+  GET  /api/v1/orders
+  POST /api/v1/orders
+{{- if .Values.ingress.certificateArn }}
+
+HTTPS is enabled. HTTP requests are redirected to HTTPS automatically.
+{{- else }}
+
+NOTE: HTTPS is not configured. To enable it, set ingress.certificateArn
+to your ACM certificate ARN in values-production.yaml.
+{{- end }}

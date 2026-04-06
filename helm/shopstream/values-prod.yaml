@@ -1,0 +1,24 @@
+replicaCount: 3
+
+ingress:
+  enabled: true
+  scheme: internet-facing
+  # certificateArn: arn:aws:acm:ca-central-1:123456789012:certificate/xxx
+  # Uncomment and set certificateArn when you have a domain + ACM cert.
+  # Until then the ALB serves HTTP on its auto-generated AWS DNS name.
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+hpa:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 65
+
+secretName: shopstream-secrets

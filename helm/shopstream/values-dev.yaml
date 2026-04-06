@@ -1,0 +1,25 @@
+replicaCount: 1
+
+ingress:
+  enabled: true
+  scheme: internal
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+secretName: shopstream-secrets
+
+# shopstream-secrets is pre-created by the migrate workflow step (constructs
+# DATABASE_URL from RDS instance metadata + Secrets Manager). ESO is disabled
+# here because the AWS managed RDS secret only contains username/password,
+# not host/port/dbname — ESO can't build DATABASE_URL from it directly.
+externalSecret:
+  enabled: false
+  region: ca-central-1
+  rdsSecretArn: ""
+  railsMasterKeySecretName: "shopstream/dev/rails-master-key"

@@ -1,0 +1,53 @@
+# Default values — overridden per environment via values-<env>.yaml.
+# Image tag is always set at deploy time: --set image.tag=<sha>
+
+image:
+  repository: ""   # set via --set image.repository=<ecr_registry>/shopstream
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  enabled: false
+  scheme: internal          # internal | internet-facing
+  host: ""
+  certificateArn: ""        # ACM certificate ARN; if set, HTTPS is enabled with HTTP→HTTPS redirect
+  annotations: {}           # extra ALB annotations if needed
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+# Name of the Kubernetes secret holding DATABASE_URL and RAILS_MASTER_KEY.
+# Created out-of-band (not managed by Helm) to keep secrets out of git.
+secretName: shopstream-secrets
+
+env:
+  RAILS_ENV: production
+  RAILS_LOG_TO_STDOUT: "true"
+  RAILS_SERVE_STATIC_FILES: "true"
+
+# External Secrets Operator — syncs Secrets Manager into the K8s secret named by secretName.
+# rdsSecretArn: ARN of the RDS managed secret (output: db_password_secret_arn from iam module)
+# railsMasterKeySecretName: Secrets Manager secret name/ARN holding RAILS_MASTER_KEY
+externalSecret:
+  enabled: false
+  region: ca-central-1
+  rdsSecretArn: ""
+  railsMasterKeySecretName: ""
