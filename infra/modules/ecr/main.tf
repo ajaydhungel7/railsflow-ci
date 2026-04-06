@@ -1,6 +1,8 @@
 resource "aws_ecr_repository" "this" {
   name                 = "${var.project}-${var.image_name}"
-  image_tag_mutability = "IMMUTABLE"
+  # Environment tags (dev, staging, prod) are overwritten on each promotion.
+  # SHA tags are unique per build so effectively immutable in practice.
+  image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
