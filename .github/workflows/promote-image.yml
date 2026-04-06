@@ -1,0 +1,44 @@
+# Reusable workflow: promote an existing ECR image to a new environment tag.
+# Retags the SHA-tagged image with an environment label (e.g. dev, staging, production).
+# No rebuild — the same image binary is promoted across all environments.
+
+name: Promote — Retag ECR Image
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "Source image tag (commit SHA)"
+        required: true
+        type: string
+      environment:
+        description: "Target environment label to apply (dev, staging, prod)"
+        required: true
+        type: string
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Retag image for environment
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPO: shopstream-shopstream-api
+          SOURCE_TAG: ${{ inputs.image_tag }}
+          TARGET_TAG: ${{ inputs.environment }}
+        run: |
+          docker pull "$REGISTRY/$REPO:$SOURCE_TAG"
+          docker tag  "$REGISTRY/$REPO:$SOURCE_TAG" "$REGISTRY/$REPO:$TARGET_TAG"
+          docker push "$REGISTRY/$REPO:$TARGET_TAG"
+          echo "Promoted $SOURCE_TAG → $TARGET_TAG"

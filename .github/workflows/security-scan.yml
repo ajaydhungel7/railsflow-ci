@@ -1,0 +1,82 @@
+# Security scan workflow: runs Trivy (container vulnerabilities) and Brakeman (Rails static analysis).
+# Called by ci.yml after the image is built. Blocks the pipeline on any HIGH or CRITICAL findings.
+# continue-on-error is intentionally never set here — security failures must stop the pipeline.
+
+name: Security — Trivy + Brakeman
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        required: true
+        type: string
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.login-ecr.outputs.registry }}/shopstream-shopstream-api:${{ inputs.image_tag }}"
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          trivyignores: shopstream-api/.trivyignore
+
+      - name: Upload Trivy results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+  brakeman:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shopstream-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4.9"
+          bundler-cache: true
+          working-directory: shopstream-api
+
+      - name: Run Brakeman
+        run: |
+          bundle exec brakeman \
+            --format ${{ vars.BRAKEMAN_OUTPUT_FORMAT || 'text' }} \
+            --no-pager \
+            --exit-on-warn
+
+  notify:
+    needs: [trivy, brakeman]
+    if: always()
+    uses: ./.github/workflows/notify.yml
+    with:
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      workflow: "Security Scan"
+      ref: ${{ inputs.image_tag }}
+    secrets: inherit
