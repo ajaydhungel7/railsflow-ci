@@ -1,0 +1,19 @@
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfplan
+.terragrunt-cache/
+
+# Claude Code
+.claude/
+
+# Local/sensitive files
+.env
+PROJECT_STATUS.md
+.ruby-lsp/
+docs/
+
+# macOS
+.DS_Store
